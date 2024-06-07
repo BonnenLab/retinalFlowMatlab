@@ -1,30 +1,22 @@
-function [] = main(subjIn)
-
+% function [] = main(subjIn)
+clear;
 %% params
 saccade_vel_thresh = 40; %degree / second velocity threshold for saccades
 saccade_acc_thresh = 5; % degree / second / second acceleration threshold
 ret_res = 1000; % pixel resolution of retinal image space (square)
 
 %% paths
+        
+    root_path = '/Users/kbonnen/Dropbox/Berkeley_2018_Processing/ProcessingPipeline/Data/2018-04-25-S08';
+    video_path = [root_path filesep 'Binocular/Pupil/world_undistorted.mp4']; % path directly to video (undistorted)
+    data_path = [root_path filesep 'Binocular/Pupil/exports/002/gaze_positions.csv']; % path to relevant data (frame by frame por, resHeight, resWidth, px2mmScale, calibDist
+    flow_path = [root_path filesep 'Binocular/flowFiles_DF/world_undistorted/OpticFlow/']; % path to .flo files
+    ret_flow_path = [root_path filesep  'Binocular/retFlow/']; %path to output matlab flow files (retinal ref)  
+    img_out_path = [root_path filesep 'Binocular/retImg/']; %path to output retinal images (good for visualizations)
 
-for subj = subjIn
-    
-    sub_str = ['S' pad(num2str(subj),2,'left','0')];
-    
-    video_path = ['/work/04337/ksm2264/lonestar/driveDL/worldFrames/']; % path directly to video (undistorted)
-    
-    % pull from Rocks.mat / Woodchips.mat
-    data_path = ['../' sub_str  '.csv'];
-    flow_path = ['../' sub_str '_Berk_flo.hdf5']; % path to .flo files
-    ret_flow_path = ['../' sub_str '/retflow_flo/']; %path to output matlab flow files (retinal ref)
-    img_out_path = ['../' sub_str '/ret_img/']; %path to output retinal images (good for visualizations)
+    vidReader = VideoReader(video_path);
     
     %% load
-    % vid = VideoReader(video_path); % video reader for image related outputs
-    %         load(data_path,'porX','porY','resHeight','resWidth','calibDist','px2mmScale','framerate'); % load relevant variables
-    
-    %load(data_path,'rEye','lEye','calibDist','px2mmScale','norm_pos_x','norm_pos_y','gazeTable');
-    
     gtable = readtable(data_path);
     
     norm_pos_x = gtable.norm_pos_x;
@@ -35,15 +27,12 @@ for subj = subjIn
     resHeight = 1080;
     resWidth = 1920;
     
-    rEye.circle_3d_normal_x = gaze_normal0_x;
-    rEye.circle_3d_normal_y = gaze_normal0_y;
-    rEye.circle_3d_normal_z = gaze_normal0_z;
+    rEye.circle_3d_normal_x = gtable.gaze_normal0_x;
+    rEye.circle_3d_normal_y = gtable.gaze_normal0_y;
+    rEye.circle_3d_normal_z = gtable.gaze_normal0_z;
     
     
-    [porX porY] = downsamplegaze(norm_pos_x, norm_pos_y, index, height, width);
-    
-    
-    
+    [porX porY] = downsamplegaze(norm_pos_x, norm_pos_y, index, height, width); 
     
     %% set up "frame 0" camera relative flow vector starting points
     calibDist = 2100;
@@ -68,30 +57,18 @@ for subj = subjIn
     end
     
     %% determine fixation vs non-fixation frames
-    
-    
-    %         fixation_frames = findFixations(porX,porY,resWidth,resHeight,px2mmScale,calibDist,saccade_vel_thresh,framerate);
     fixation_frames = findFixations(porX,porY,resWidth,resHeight,px2mmScale,calibDist,saccade_vel_thresh,saccade_acc_thresh,rEye);
     
     %% list fixation blocks for easy iteration
     
     fixation_list = genFixationList(fixation_frames);
-    
     fixation_list_search = fixation_list(:);
-    
     idx = index(fixation_list_search);
     conv_fix_list = reshape(idx,size(fixation_list));
-    
     conv_fix_list = conv_fix_list(abs(conv_fix_list(:,1)-conv_fix_list(:,2))~=0,:);
-    
     fixation_list = conv_fix_list;
     
     %% determine start and end frames to process (pull from a struct?)
-    
-    % groundlook frames
-    %           10079  to   15824
-    
-    
     
     startFrame = 1 ; % fix these
     endFrame = length(porX);
@@ -100,18 +77,13 @@ for subj = subjIn
     last_fix = find(fixation_list(:,1)<endFrame,1,'last'); % last fixation within start:end
     
     addpath(genpath(cd));
-    %         cd(flow_path);
-    
     assert(length(porX)<=endFrame);
     
     
     px2mmScale = 2.3232;
     calibDist = 2100;
-    %	save('testDat.mat','porX','porY');
     %% loop over fixations fix_itr goes from 1:num_fixations within start:end
-    parfor fix_itr = first_fix:last_fix
-        %	for fix_itr = 1;
-        %         for fix_itr = 410:last_fix
+    for fix_itr = 188:last_fix
         
         %% iterate through this fixation block
         c_fix_first = fixation_list(fix_itr,1); % video frame of start of fixation block
@@ -119,22 +91,26 @@ for subj = subjIn
         
         %% loop over relevant video frames
         for frame_itr = c_fix_first:c_fix_last
-            %	for frame_itr = 4208;
             tic
             %% read flow file for current frame
             try
-                flow = h5read(flow_path,['/' num2str(frame_itr+1)]);
-                flow = permute(flow,[3 2 1]);
-                %       if frame_itr==4208
-                %		writeFlowFile(flow,'4209.flo');
-                %	end
+                % flow = h5read(flow_path,['/' num2str(frame_itr+1)]);
+                % flow = permute(flow,[3 2 1]);
+                tmp = load([flow_path 'Frame' num2str(frame_itr,'%04i') '.mat']);
+                % flow_fl = flow;
+                % flow = flow_fl.Vx;
+                % flow(:,:,2) = flow_fl.Vy;
+
+    
+                flow = tmp.dx;
+                flow(:,:,2) = tmp.dy;
+
             catch
-                flow = ones(1080,1920,2);
+                error('no flow file loaded')
+                % flow = ones(1080,1920,2);
             end
-            %	camflow = opticalFlow(flow(:,:,1),flow(:,:,2));
+            
             %% update gaze estimate using either eye tracker estimate (first frame of fixation block), or optic flow pathline (rest of fixation)
-            
-            
             flow = double(flow);
             
             eXPre = round(porX(frame_itr));
@@ -143,10 +119,7 @@ for subj = subjIn
             eXPost = eXPre+ double(flow(eYPre,eXPre,1));
             eYPost = eYPre + double(flow(eYPre,eXPre,2));
             
-            
-            %save('testDat.mat','eYPre','eYPost','eXPre','eXPost');
             %% retinal flow field calculation + retinal image
-            
             % convert current frame gaze vec to 3D world coordinates (camera relative,
             % with image plane centered at [0 0 calibDist];
             eXPre = px2mmScale*(eXPre - resWidth/2);
@@ -178,8 +151,6 @@ for subj = subjIn
             
             dir_arg = normr([gazePre(1)*ones(length(fx(:)),1)-fx(:),gazePre(2)*ones(length(fx(:)),1)-fy(:),gazePre(3)*ones(length(fx(:)),1)-fz(:)]);
             
-            
-            
             P = lineSphereIntersection(gazePre(1),gazePre(2),gazePre(3),...
                 dir_arg(:,1),dir_arg(:,2),dir_arg(:,3),...
                 0,0,0,1);
@@ -207,17 +178,16 @@ for subj = subjIn
             
             % get the corresponding indeces of points on the sphere
             % when projected back onto this square patch
-            ret_dex = sub2ind([ret_res+1 ret_res+1],round(ret_res/2*flatBackCoords(:,1))+ret_res/2+1,round(ret_res/2*flatBackCoords(:,2))+ret_res/2+1);
+            % ret_dex = sub2ind([ret_res+1 ret_res+1],round(ret_res/2*flatBackCoords(:,1))+ret_res/2+1,round(ret_res/2*flatBackCoords(:,2))+ret_res/2+1);
             
-            % ret_dex is the mapping of the row of P (sphere intersection
-            % coordinates) to the index of the retinal image [ret_res+1 x
-            % ret_res+1]
-            ret_dex2 = ret_dex(~isnan(ret_dex)); % only index the non-nan values of ret_dex
-            
+            X = 1+round(ret_res/2*P(:,1)+ret_res/2);
+            Y = 1+round(ret_res/2*P(:,2)+ret_res/2);
+            notnan = ~isnan(X);
+            ret_dex2 = sub2ind([ret_res+1 ret_res+1],X(notnan),Y(notnan));
+         
             % get next frame's eye position vector
             eXPost = px2mmScale*(eXPost - resWidth/2);
             eYPost = px2mmScale*(eYPost - resHeight/2);
-            
             
             gazePost = normr([eXPost eYPost calibDist]);
             
@@ -247,9 +217,6 @@ for subj = subjIn
             
             flowPost = cat(3,reshape(flowPost_mod_X,sizeMat),reshape(flowPost_mod_Y,sizeMat),flowPost_mod_Z);
             
-            %                 flowPost(:,:,1:2) = flowPre(:,:,1:2) + flow; % projections of points relative to the eye onto the calibration plane only move within that plane
-            %                 flowPost(:,:,3) = calibDist;                 % endpoints of of the flow vectors thus stay at that depth.
-            
             % now we must apply a rotation that puts gazePost at gazePre to all of
             % the flowPost vectors (add in motion of eye movement)
             % computes axis angle rotation given two 3D vectors
@@ -257,7 +224,6 @@ for subj = subjIn
             
             % turn into rotation matrix for convenience
             rotmPost = axang2rotm(rotVec);
-            
             
             flowPostX = flowPost(:,:,1);
             flowPostY = flowPost(:,:,2);
@@ -278,9 +244,6 @@ for subj = subjIn
             
             %% calculate angles between flowPre and flowPost (rotation around vertical axis, horizontal axis, single axis)
             % also calculate the axis for each of the flow rotations
-            
-            
-            
             fx = flowPostVecs(:,1);
             fy = flowPostVecs(:,2);
             fz = flowPostVecs(:,3);
@@ -294,8 +257,6 @@ for subj = subjIn
             
             dir_arg = normr([gazePre(1)*ones(length(fx(:)),1)-fx(:),gazePre(2)*ones(length(fx(:)),1)-fy(:),gazePre(3)*ones(length(fx(:)),1)-fz(:)]);
             
-            % inputLine = createLine3d(fx(:),fy(:),fz(:),...
-            %    dir_arg(:,1),dir_arg(:,2),dir_arg(:,3));
             
             
             P2 = lineSphereIntersection(gazePre(1),gazePre(2),gazePre(3),...
@@ -334,34 +295,6 @@ for subj = subjIn
             
             dRho = gcAngsP2 - gcAngs;
             
-            %                  % retinal angVel (it still lives on the image plane at
-            %                 % this point)
-            %                 ret_xtest = nan(ret_res+1,ret_res+1);
-            %
-            %                 % same procedure for pixels
-            %                 %         angVel = repmat(angVel(:),[2 1]);
-            %                 ret_xtest(ret_dex2) = P(~isnan(ret_dex),1);
-            %                 ret_xtest = fliplr(rot90(ret_xtest));
-            %                   % retinal angVel (it still lives on the image plane at
-            %                 % this point)
-            %                 ret_ytest = nan(ret_res+1,ret_res+1);
-            %
-            %                 % same procedure for pixels
-            %                 %         angVel = repmat(angVel(:),[2 1]);
-            %                 ret_ytest(ret_dex2) = P(~isnan(ret_dex),2);
-            %                 ret_ytest = fliplr(rot90(ret_ytest));
-            %
-            %                  ret_theta1 = nan(ret_res+1,ret_res+1);
-            %                  ret_theta1(ret_dex2) = thetaP(~isnan(ret_dex));
-            %                 ret_theta1 = fliplr(rot90(ret_theta1));
-            %
-            %                 ret_theta2 = nan(ret_res+1,ret_res+1);
-            %                  ret_theta2(ret_dex2) = thetaP2(~isnan(ret_dex));
-            %                 ret_theta2 = fliplr(rot90(ret_theta2));
-            %
-            %                  ccw = nan(ret_res+1,ret_res+1);
-            %                  ccw(ret_dex2) = ccwCrossDex(~isnan(ret_dex));
-            %                 ccw = fliplr(rot90(ccw));
             %% theta change (rotation around the viewing axis) ccw
             
             % retinal angVel (it still lives on the image plane at
@@ -370,7 +303,7 @@ for subj = subjIn
             
             % same procedure for pixels
             %         angVel = repmat(angVel(:),[2 1]);
-            ret_dTheta(ret_dex2) = dTheta(~isnan(ret_dex));
+            ret_dTheta(ret_dex2) = dTheta(notnan);
             
             % get gap filler
             ret_img_fill =ret_dTheta;
@@ -393,7 +326,7 @@ for subj = subjIn
             
             % same procedure for pixels
             %         angVel = repmat(angVel(:),[2 1]);
-            ret_dRho(ret_dex2) = dRho(~isnan(ret_dex));
+            ret_dRho(ret_dex2) = dRho(notnan);
             
             % get gap filler
             ret_img_fill =ret_dRho;
@@ -463,17 +396,72 @@ for subj = subjIn
             
             writeFlowFile(cat(3,p_flow.Vx,p_flow.Vy),[ret_flow_path ...
                 num2str(frame_itr) '.flo']);
-            %
+                
+
+                            %% write retinal image
+                
+                
+                frame = read(vidReader,frame_itr);
+                % vectorize R G B channels
+                frameR = frame(:,:,1);
+                frameG = frame(:,:,2);
+                frameB = frame(:,:,3);
+                
+                % duplicate them because of something
+                frameR = repmat(frameR(:),[2 1]);
+                frameG = repmat(frameG(:),[2 1]);
+                frameB = repmat(frameB(:),[2 1]);
+                
+                
+                
+                % initialize three channels of retinal image
+                ret_img_R = zeros(ret_res+1,ret_res+1);
+                ret_img_G = zeros(ret_res+1,ret_res+1);
+                ret_img_B = zeros(ret_res+1,ret_res+1);
+                
+                
+                
+                % fill in retinal image with correct pixel values
+                ret_img_R(ret_dex2) = frameR(notnan);
+                ret_img_G(ret_dex2) = frameG(notnan);
+                ret_img_B(ret_dex2) = frameB(notnan);
+                
+                %eflip and rotate to account for upside downness
+                ret_img = fliplr(rot90(uint8(cat(3,ret_img_R,ret_img_G,ret_img_B)),1));
+                
+                % fill in holes caused by undercomplete sampling in
+                % center for all three channels
+                ret_img_fill =rgb2gray(ret_img);
+                ret_img_fill(ret_img_fill~=0) =1;
+                ret_img_mask = imfill(ret_img_fill,'holes');
+                ret_img_gaps = xor(ret_img_mask,ret_img_fill);
+                Rc = regionfill(ret_img(:,:,1),ret_img_gaps);
+                Gc = regionfill(ret_img(:,:,2),ret_img_gaps);
+                Bc = regionfill(ret_img(:,:,3),ret_img_gaps);
+                ret_img = cat(3,Rc,Gc,Bc);
+                
+                % write image
+                imwrite(ret_img,[img_out_path num2str(frame_itr) '.png']);
+
+            figure(1);
+            imshow(ret_img);  hold on;
+            plot(xyFlow,'DecimationFactor',[10 10],'ScaleFactor',60);
+            plot(501,501,'r.','MarkerSize',20)
+            hold off;
+
+
+            pause(.01);
+
             tt = toc;
             disp(['Progress: ' num2str(frame_itr/endFrame) ', Currently Processing '...
-                sub_str ', ' cond_str ', est. time left: '...
+                ', est. time left: '...
                 num2str(tt*(endFrame-frame_itr)) 'seconds']);
         end
         
     end
     
-end
+% end
 
 
 
-end
+% end
